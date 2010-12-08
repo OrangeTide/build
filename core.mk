@@ -53,8 +53,13 @@ static-lib-path = $(patsubst %,$(OUTDIR)libs/$(MODULE)/lib%.a,$1)
 
 # Macro: shared-lib-path
 # Returns: prefix applied to each element of list for static libs
-# Usage: $(call shared-lib-path,<list...>)
+# Usage: $(call shared-lib-path,<module names...>)
 shared-lib-path = $(patsubst %,$(OUTDIR)libs/$(MODULE)/lib%.so,$1)
+
+# Macro: dep-path
+# Returns: source file names translated to dependency paths
+# Usage: $(call exec-path,<files...>)
+dep-path = $(patsubst %,$(OUTDIR)deps/$(MODULE)/%.d,$1)
 
 # Macro: target-pkg-config-cflags
 # Returns: list of compiler flags for target
@@ -66,22 +71,56 @@ target-pkg-config-cflags = $(shell $(TARGET_PKGCONFIG) --cflags $1)
 # Usage: $(call target-pkg-config-libs,pkgname)
 target-pkg-config-libs = $(shell $(TARGET_PKGCONFIG) --libs $1)
 
+# Macro: use-cxx
+# Returns: first option if C++ compiler need, second option otherwise
+# Description: detect if C++ sources are used
+# Usage: $(call use-cxx,$(SRCS),<true-expr>,<false-expr>)
+use-cxx = $(if $(filter $(CXX_PATTERNS),$1),$2,$3)
+
+# Macro : libversion
+# Returns: linker arguments to pass CC to set library version
+# Usage: $(call libversion,<lib-file-name>,<version>)
+libversion = -Wl,-soname,$1.$2
+
+# Macro: compile-xxx
+# Returns: template for compiling something
+# Usage: $(eval $(call compile-xxx,<source-file>,<obj-file>,<dep-path>,<cmd>,<log-msg>)
+# Uses: LOCAL_PATH, STATIC_LIBRARIES, MODULE
+# Side-effect: adds objects to _OBJS
+define compile-xxx
+# compile rule
+$2 : $1 | $$(dir $2)
+	$$(call log,$5)
+	$Q$4 -o $$@ $$<
+_OBJS += $2
+CLEAN_FILES += $2
+# dependency generation
+ALL_DEPENDENCIES += $3
+CLEAN_ALL_FILES += $3
+ifeq ($(filter $(MAKECMDGOALS),help clean clean-all),)
+$3 : $1 | $$(dir $3)
+	$(call log,Dependency $$(notdir $$<))
+	$Q$4 -MM -MG -MF $$@ -MT $2 $$<
+include $3
+endif
+endef
+
 # Macro: compile-c
 # Returns: template for compiling C source
 # Usage: $(eval $(call compile-c,onefile.c,<cflags>)
 # Uses: LOCAL_PATH, STATIC_LIBRARIES, MODULE
 # Side-effect: adds objects to _OBJS
 define compile-c
-S := $$(LOCAL_PATH)$1
-O := $$(call obj-path,$(1:.c=.o))
-$$O : $$S | $$(dir $$O)
-	$(call log,Compile $$<)
-	$Q$$(CC) $(strip $2 $(TARGET_CFLAGS) $(CFLAGS) $(CPPFLAGS)) \
-	$$(foreach v,$(STATIC_LIBRARIES) $(SHARED_LIBRARIES),$$(_libcflags_$$v)) \
-	-c -o $$@ $$<
-_OBJS += $$O
-CLEAN_FILES += $$O
+$(call compile-xxx,$$(LOCAL_PATH)$1,$$(call obj-path,$(1:.c=.o)),$$(call dep-path,$1),$$(CROSS_COMPILE)$(CC) $2 $(TARGET_CFLAGS) $(CFLAGS) $(CPPFLAGS) $$(foreach v,$(STATIC_LIBRARIES) $(SHARED_LIBRARIES),$$(_libcflags_$$v)) -c,Compile $$<)
+endef
 
+# Macro: compile-cxx
+# Returns: template for compiling C++ source
+# Usage: $(eval $(call compile-cxx,onefile.cxx,<cflags>)
+# Uses: LOCAL_PATH, STATIC_LIBRARIES, MODULE
+# Side-effect: adds objects to _OBJS
+define compile-cxx
+$(call compile-xxx,$$(LOCAL_PATH)$1,$$(call obj-path,$(foreach p,$(CXX_PATTERNS),$(patsubst $p,%.o,$(filter $p,$1)))),$$(call dep-path,$1),$$(CROSS_COMPILE)$(CXX) $2 $(TARGET_CFLAGS) $(TARGET_CXXFLAGS) $(CFLAGS) $(CXXFLAGS) $(CPPFLAGS) $$(foreach v,$(STATIC_LIBRARIES) $(SHARED_LIBRARIES),$$(_libcflags_$$v)) -c,Compile $$<)
 endef
 
 # Macro: build-objs
@@ -92,11 +131,14 @@ endef
 # See Also: compile-c, compile-s, compile-cxx
 define build-objs
 $(if $(MODULE),,$(error MODULE is not set in $(prev-makefile)))
+$(if $(filter $(MODULE),$(ALL_MODULES)),$(error duplicate MODULE name in $(prev-makefile)))
 $(if $(filter %.o %.a %.so,$(SRCS)),$(error Binaries in the SRCS list for $(MODULE)!))
 $(foreach s,$(filter %.c,$(SRCS)),$(call compile-c,$s,$1))
 $(foreach s,$(filter %.s %.S,$(SRCS)),$(call compile-s,$s,$1))
-$(foreach s,$(filter %.cc %.cxx %.cpp,$(SRCS)),$(call compile-cxx,$s,$1))
-# a setup that is common to all actions(sharedlib, staticlib, and exec):
+$(foreach s,$(filter $(CXX_PATTERNS),$(SRCS)),$(call compile-cxx,$s,$1))
+# force rebuild of objects if Build.mk changes
+$$(_OBJS) : $$(CURR_BUILD_MK)
+# DESCRIPTION field is common to all actions(sharedlib, staticlib, and exec):
 ifneq ($(DESCRIPTION),)
 _desc_$(MODULE) := $(DESCRIPTION)
 endif
@@ -118,6 +160,8 @@ SRCS :=#
 _OBJS :=#
 STATIC_LIBRARIES :=#
 SHARED_LIBRARIES :=#
+OUTPUT_NAME :=#
+LIBVERSION :=#
 
 endef
 
@@ -128,14 +172,14 @@ endef
 # Side-effect: add directories to ALL_DIRS
 # TODO: use different flags if any C++ sources were used
 define build-exec
-M := $$(call exec-path,$$(MODULE))
+M := $$(call exec-path,$$(if $$(OUTPUT_NAME),$$(OUTPUT_NAME),$$(MODULE)))
 # Add PROVIDE_LDFLAGS for every STATIC_LIBRARIES and SHARED_LIBRARIES
-# Add -Llibpath -l$(MODULE) for every SHARED_LIBRARIES
+# Add -Llibpath -llibname for every SHARED_LIBRARIES
 $$M : $$(_OBJS) $$(foreach v,$(STATIC_LIBRARIES) $(SHARED_LIBRARIES),$$$$(_libpath_$$v)) | $$(dir $$M)
 	$(call log,Executable $$@)
-	$Q$$(CC) $(strip $(TARGET_CFLAGS) $(LDFLAGS)) \
+	$Q$(call use-cxx,$(SRCS),$(CROSS_COMPILE)$(CXX),$(CROSS_COMPILE)$(CC)) $(strip $(TARGET_CFLAGS) $(LDFLAGS)) \
 	$$(foreach v,$(STATIC_LIBRARIES) $(SHARED_LIBRARIES),$$(_libldflags_$$v)) \
-	$$(foreach v,$(SHARED_LIBRARIES),-L$$(dir $$(_libpath_$$v)) -l$$v) \
+	$$(foreach v,$(SHARED_LIBRARIES),-L$$(dir $$(_libpath_$$v)) -l$$(patsubst lib%.so,%,$$(notdir $$(_libpath_$$v)))) \
 	-o $$@ $$(filter %.o %.a,$$^) $(LDLIBS)
 all : $$M
 $$(MODULE) : $$M
@@ -152,7 +196,7 @@ endef
 # Side-effect: add directories to ALL_DIRS
 # TODO: use different flags if any C++ sources were used
 define build-static-lib
-L := $$(call static-lib-path,$$(MODULE))
+L := $$(call static-lib-path,$$(if $$(OUTPUT_NAME),$$(OUTPUT_NAME),$$(MODULE)))
 # make sure the library name is related to special archive pattern
 $$L : $$L($$(_OBJS))
 # invoke the pattern rule for (%) : %
@@ -172,16 +216,16 @@ endef
 # Macro: build-shared-lib
 # Returns: template for linking .o files into a shared library
 # Usage: $(eval $(call build-shared-lib))
-# Uses: _OBJS, LOCAL_PATH, STATIC_LIBRARIES, MODULE
+# Uses: _OBJS, LOCAL_PATH, STATIC_LIBRARIES, MODULE, LIBVERSION
 # Side-effect: add directories to ALL_DIRS
 # TODO: use different flags if any C++ sources were used
 define build-shared-lib
-L := $$(call shared-lib-path,$$(MODULE))
+L := $$(call shared-lib-path,$$(if $$(OUTPUT_NAME),$$(OUTPUT_NAME),$$(MODULE)))
 $$L : $$(_OBJS) | $$(dir $$L)
 	$(call log,Shared library $$@)
 	$Q$$(CC) -shared $(strip $(TARGET_CFLAGS) $(LDFLAGS)) \
 	$(foreach v,$(STATIC_LIBRARIES) $(SHARED_LIBRARIES),$$(_libldflags_$v)) \
-	-o $$@ $$^ $(LDLIBS)
+	$(if $(LIBVERSION),$(call libversion,$(call shared-lib-path,$(if $(OUTPUT_NAME),$(OUTPUT_NAME),$(MODULE))),$(LIBVERSION))) -o $$@ $$^ $(LDLIBS)
 all : $$L
 $$(MODULE) : $$L
 _libldflags_$$(MODULE) := $$(PROVIDE_LDFLAGS)
@@ -213,8 +257,11 @@ endef
 CLEAN_ALL_FILES :=#
 CLEAN_FILES :=#
 ALL_MODULES :=#
+ALL_DEPENDENCIES :=#
 
 OUTDIR ?= $(TOP)_out/
+
+CXX_PATTERNS := %.cc %.cxx %.cpp
 
 # directory holding this file
 B := $(this-dir)
@@ -250,7 +297,7 @@ BUILD_EXECUTABLE := $Bexec.mk
 # BUILD_PLUGIN := $Bplugin.mk
 
 ## begin including Build.mk files
-ALL_DIRS := $(OUTDIR) $(OUTDIR)objs/ $(OUTDIR)exec/ $(OUTDIR)libs/
+ALL_DIRS := $(OUTDIR) $(OUTDIR)objs/ $(OUTDIR)exec/ $(OUTDIR)libs/ $(OUTDIR)deps/
 LOCAL_PATH :=#
 $(eval $(call clear-vars))
 include $(CURDIR)/Build.mk
@@ -265,6 +312,9 @@ help :
 	@echo
 	@echo Modules:
 	$(foreach m,$(ALL_MODULES),$(call print-module,$m))
+
+# add all dependency directories
+ALL_DIRS := $(sort $(ALL_DIRS) $(dir $(ALL_DEPENDENCIES)))
 
 ## Make all necessary directories
 $(ALL_DIRS) :

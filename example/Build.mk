@@ -1,1 +1,1 @@
-include $(wildcard */Build.mk)
+build/Build.mk-example

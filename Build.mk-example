@@ -1,0 +1,2 @@
+# Build all subdirectories with Build.mk files)
+include $(wildcard $(TOP)*/Build.mk)

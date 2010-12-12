@@ -191,48 +191,46 @@ endef
 
 # Macro: build-static-lib
 # Returns: template for linking .o files into a static library
-# Usage: $(eval $(call build-static-lib))
+# Usage: $(eval $(call build-static-lib,<lib-path>))
 # Uses: _OBJS, LOCAL_PATH, STATIC_LIBRARIES, MODULE
 # Side-effect: add directories to ALL_DIRS
 # TODO: use different flags if any C++ sources were used
 define build-static-lib
-L := $$(call static-lib-path,$$(if $$(OUTPUT_NAME),$$(OUTPUT_NAME),$$(MODULE)))
 # make sure the library name is related to special archive pattern
-$$L : $$L($$(_OBJS))
+$1 : $1($$(_OBJS))
 # invoke the pattern rule for (%) : %
 .INTERMEDIATE : $$(_OBJS)
-$$L($$(_OBJS)) : $$(_OBJS) | $$(dir $$L)
-all : $$L
-$$(MODULE) : $$L
+$1($$(_OBJS)) : $$(_OBJS) | $$(dir $1)
+all : $1
+$$(MODULE) : $1
 _libldflags_$$(MODULE) := $$(PROVIDE_LDFLAGS)
 _libcflags_$$(MODULE) := $$(PROVIDE_CFLAGS)
-_libpath_$$(MODULE) := $$L
-ALL_DIRS := $$(sort $$(ALL_DIRS) $$(dir $$(_OBJS) $$L))
-CLEAN_ALL_FILES += $$L
+_libpath_$$(MODULE) := $1
+ALL_DIRS := $$(sort $$(ALL_DIRS) $$(dir $$(_OBJS) $1))
+CLEAN_ALL_FILES += $1
 $$(eval $$(call clear-vars))
 
 endef
 
 # Macro: build-shared-lib
 # Returns: template for linking .o files into a shared library
-# Usage: $(eval $(call build-shared-lib))
+# Usage: $(eval $(call build-shared-lib,<lib-path>))
 # Uses: _OBJS, LOCAL_PATH, STATIC_LIBRARIES, MODULE, LIBVERSION
 # Side-effect: add directories to ALL_DIRS
 # TODO: use different flags if any C++ sources were used
 define build-shared-lib
-L := $$(call shared-lib-path,$$(if $$(OUTPUT_NAME),$$(OUTPUT_NAME),$$(MODULE)))
-$$L : $$(_OBJS) | $$(dir $$L)
+$1 : $$(_OBJS) | $$(dir $1)
 	$(call log,Shared library $$@)
 	$Q$$(CC) -shared $(strip $(TARGET_CFLAGS) $(LDFLAGS)) \
 	$(foreach v,$(STATIC_LIBRARIES) $(SHARED_LIBRARIES),$$(_libldflags_$v)) \
 	$(if $(LIBVERSION),$(call libversion,$(call shared-lib-path,$(if $(OUTPUT_NAME),$(OUTPUT_NAME),$(MODULE))),$(LIBVERSION))) -o $$@ $$^ $(LDLIBS)
-all : $$L
-$$(MODULE) : $$L
+all : $1
+$$(MODULE) : $1
 _libldflags_$$(MODULE) := $$(PROVIDE_LDFLAGS)
 _libcflags_$$(MODULE) := $$(PROVIDE_CFLAGS)
-_libpath_$$(MODULE) := $$L
-ALL_DIRS := $$(sort $$(ALL_DIRS) $$(dir $$(_OBJS) $$L))
-CLEAN_ALL_FILES += $$L
+_libpath_$$(MODULE) := $1
+ALL_DIRS := $$(sort $$(ALL_DIRS) $$(dir $$(_OBJS) $1))
+CLEAN_ALL_FILES += $1
 $$(eval $$(call clear-vars))
 
 endef
@@ -273,7 +271,7 @@ Q := $(if $V,,@)
 include $Bosdetect.mk
 
 # optional configuration for this project - for configuring TARGET_OS
-include $(wildcard $(CURDIR)/Config.mk)
+include $(wildcard $(TOP)Config.mk)
 
 # set up target if not configured
 TARGET_OS ?= $(HOST_OS)
@@ -300,7 +298,7 @@ BUILD_EXECUTABLE := $Bexec.mk
 ALL_DIRS := $(OUTDIR) $(OUTDIR)objs/ $(OUTDIR)exec/ $(OUTDIR)libs/ $(OUTDIR)deps/
 LOCAL_PATH :=#
 $(eval $(call clear-vars))
-include $(CURDIR)/Build.mk
+include $(TOP)Build.mk
 
 ## Help text
 help :

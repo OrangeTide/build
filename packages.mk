@@ -16,6 +16,10 @@ ifeq ($(TARGET_OS),Linux)
 # POSIX timers : clock_gettime, clock_getres, ...
 POSIX_TIMERS_CFLAGS =
 POSIX_TIMERS_LDFLAGS = -lrt
+
+# Curses/ncurses
+CURSES_CFLAGS =
+CURSES_LDFLAGS = -lncurses
 endif
 
 # Windows only
@@ -27,6 +31,10 @@ GDI_LDFLAGS = -lgdi32
 # Winsock2
 WS2_CFLAGS =
 WS2_LDFLAGS = -lws2_32
+
+# pdcurses
+CURSES_CFLAGS = -Ipath/to/pdcurses/include
+CURSES_LDFLAGS = -lpdcurses
 endif
 
 # Lua 5.1

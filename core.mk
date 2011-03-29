@@ -8,6 +8,28 @@ ifeq ($(TOP),)
 $(error TOP must be set - recommended in top Makefile)
 endif
 
+## Cancel built-in rules
+
+% : %.o
+% : %.c
+% : %.cc
+% : %.C
+% : %.F
+% : %.f
+% : %.p
+% : %.s
+%.o : %.c
+%.o : %.cc
+%.o : %.C
+%.o : %.F
+%.o : %.f
+%.o : %.p
+%.o : %.s
+%.o : %.S
+%.c : %.y
+%.c : %.l
+%.r : %.l
+
 ## Macros
 
 # Macro: log

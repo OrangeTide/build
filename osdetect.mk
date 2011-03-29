@@ -28,3 +28,18 @@ endif
 #  win32
 #  cocoa
 #  x11
+
+ifneq ($(CROSS_COMPILE),)
+# TODO: check for both cc and gcc names?
+_MACH := $(shell $(CROSS_COMPILE)$(CC) -dumpmachine)
+ifeq ($(_MACH),i586-mingw32msvc)
+TARGET_OS ?= Windows_NT
+TARGET_OS_TYPE ?= win32
+$(info TARGET_OS=$(TARGET_OS))
+$(info TARGET_OS_TYPE=$(TARGET_OS_TYPE))
+endif
+endif
+
+# set up target if not configured
+TARGET_OS ?= $(HOST_OS)
+TARGET_OS_TYPE ?= $(HOST_OS_TYPE)

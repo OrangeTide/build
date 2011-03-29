@@ -153,7 +153,7 @@ endef
 # See Also: compile-c, compile-s, compile-cxx
 define build-objs
 $(if $(MODULE),,$(error MODULE is not set in $(prev-makefile)))
-$(if $(filter $(MODULE),$(ALL_MODULES)),$(error duplicate MODULE name in $(prev-makefile)))
+$(if $(filter $(MODULE),$(ALL_MODULES)),$(error duplicate MODULE named '$(MODULE)' in $(prev-makefile).))
 $(if $(filter %.o %.a %.so,$(SRCS)),$(error Binaries in the SRCS list for $(MODULE)!))
 $(foreach s,$(filter %.c,$(SRCS)),$(call compile-c,$s,$1))
 $(foreach s,$(filter %.s %.S,$(SRCS)),$(call compile-s,$s,$1))
@@ -266,10 +266,11 @@ endef
 
 ## Generic rules
 
+# TODO: use different AR for host and target.
 #Pattern for static libraries
 (%) : %
 	$(call log,Static library $@)
-	$Qcd $(<D) ; $(AR) $(ARFLAGS) $(CURDIR)/$@ $(<F)
+	$Qcd $(<D) ; $(CROSS_COMPILE)$(AR) $(ARFLAGS) $(CURDIR)/$@ $(<F)
 
 ## Setup
 .SECONDEXPANSION:
@@ -295,12 +296,7 @@ include $Bosdetect.mk
 # optional configuration for this project - for configuring TARGET_OS
 include $(wildcard $(TOP)Config.mk)
 
-# set up target if not configured
-TARGET_OS ?= $(HOST_OS)
-TARGET_OS_TYPE ?= $(HOST_OS_TYPE)
-
 TARGET_CFLAGS ?= -Wall -W -g
-# TARGET_LDFALGS ?= -mwindows
 TARGET_PKGCONFIG ?= $(CROSS_COMPILE)pkg-config
 
 ## Package macros - affected by TARGET_OS and TARGET_OS_TYPE

@@ -164,6 +164,8 @@ $$(_OBJS) : $$(CURR_BUILD_MK)
 ifneq ($(DESCRIPTION),)
 _desc_$(MODULE) := $(DESCRIPTION)
 endif
+$(MODULE)_dir := $(LOCAL_PATH)
+$(MODULE)_srcs := $(foreach f,$(SRCS),$(LOCAL_PATH)$f)
 ALL_MODULES += $(MODULE)
 endef
 
@@ -318,6 +320,17 @@ LOCAL_PATH :=#
 $(eval $(call clear-vars))
 include $(TOP)Build.mk
 
+## ctags support
+CLEAN_FILES += $(TOP)/tags
+
+$(TOP)/tags : $(foreach m,$(ALL_MODULES),$($m_srcs))
+	ctags -f $@ $^
+
+ifneq ($(TOP),./)
+tags : $(TOP)/tags
+endif
+
+
 ## Help text
 help :
 	@echo Actions:
@@ -325,6 +338,7 @@ help :
 	@echo clean - clean intermediate files
 	@echo clean-all	- clean all output files
 	@echo help - this help text
+	@echo tags - create tags file at $(TOP)/tags
 	@echo
 	@echo Modules:
 	$(foreach m,$(ALL_MODULES),$(call print-module,$m))
